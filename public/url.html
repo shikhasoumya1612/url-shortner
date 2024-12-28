@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Shorten Your URL</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+      rel="stylesheet"
+    />
+
+    <style>
+      body {
+        background: #f4f7fc;
+        height: 100vh;
+      }
+      .container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100%;
+      }
+      .card {
+        width: 100%;
+        max-width: 500px;
+        padding: 30px;
+        border-radius: 10px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        background: #ffffff;
+      }
+      .btn-submit {
+        background-color: #007bff;
+        color: white;
+        border-radius: 5px;
+      }
+      .btn-submit:hover {
+        background-color: #0056b3;
+      }
+      .form-label {
+        font-weight: bold;
+      }
+      .input-group-text {
+        background-color: #f1f1f1;
+        border-radius: 5px;
+      }
+      footer {
+        position: absolute;
+        bottom: 10px;
+        text-align: center;
+        color: #888;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="card">
+        <h2 class="text-center mb-4">Welcome to URL Shortener</h2>
+        <p class="text-center text-muted mb-4">
+          Easily shorten your long URLs and share them effortlessly.
+        </p>
+        <form id="urlForm">
+          <div class="mb-3">
+            <label for="longUrl" class="form-label">Long URL</label>
+            <input
+              type="url"
+              class="form-control"
+              id="longUrl"
+              placeholder="Enter the long URL"
+              required
+            />
+          </div>
+          <div class="mb-3">
+            <label for="customAlias" class="form-label"
+              >Custom Alias (Optional)</label
+            >
+            <input
+              type="text"
+              class="form-control"
+              id="customAlias"
+              placeholder="Enter custom alias (optional)"
+            />
+          </div>
+          <div class="mb-3">
+            <label for="topic" class="form-label">Topic (Optional)</label>
+            <input
+              type="text"
+              class="form-control"
+              id="topic"
+              placeholder="Enter topic (optional)"
+            />
+          </div>
+          <button type="submit" class="btn btn-submit w-100">
+            Generate Short URL
+          </button>
+        </form>
+        <div id="shortUrlResponse" class="mt-3" style="display: none">
+          <h5>Generated Short URL:</h5>
+          <div class="d-flex align-items-center">
+            <p id="shortUrl" class="mb-0"></p>
+            <button
+              id="copyButton"
+              class="btn btn-link ms-2"
+              title="Copy to clipboard"
+              aria-label="Copy to clipboard"
+            >
+              <i class="fa-solid fa-copy"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <footer>
+      <p>Made with ❤️ Soumya</p>
+    </footer>
+
+    <script>
+      const urlForm = document.getElementById("urlForm");
+      const shortUrlResponse = document.getElementById("shortUrlResponse");
+      const shortUrl = document.getElementById("shortUrl");
+
+      const clearShortUrlBlock = () => {
+        shortUrlResponse.style.display = "none";
+      };
+
+      document.querySelectorAll("input").forEach((input) => {
+        input.addEventListener("input", clearShortUrlBlock);
+      });
+
+      urlForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const longUrl = document.getElementById("longUrl").value;
+        const customAlias = document.getElementById("customAlias").value;
+        const topic = document.getElementById("topic").value;
+        const idToken = localStorage.getItem("id_token");
+
+        const response = await fetch("http://localhost:5000/api/shorten", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({
+            longUrl,
+            customAlias,
+            topic,
+          }),
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+          shortUrlResponse.style.display = "block";
+          shortUrl.textContent = `http://localhost:5000/api/shorten/${data.shortUrl}`;
+        } else {
+          alert("Error generating short URL");
+        }
+      });
+
+      document.getElementById("copyButton").addEventListener("click", () => {
+        const shortUrlText = document.getElementById("shortUrl").textContent;
+        navigator.clipboard.writeText(shortUrlText).then(
+          () => {
+            alert("Short URL copied to clipboard!");
+          },
+          (err) => {
+            console.error("Error copying text: ", err);
+          }
+        );
+      });
+    </script>
+  </body>
+</html>
