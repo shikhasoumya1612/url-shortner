@@ -2,6 +2,7 @@ const express = require("express");
 const dotenv = require("dotenv");
 const connectDB = require("./config/db");
 const path = require("path");
+const useragent = require("express-useragent");
 const routes = require("./routes/api.route");
 
 dotenv.config();
@@ -9,9 +10,9 @@ dotenv.config();
 connectDB();
 
 const app = express();
+app.use(useragent.express());
 
 app.use(express.json());
-
 app.use(express.static(path.join(__dirname, "public")));
 
 app.use("/api", routes);
