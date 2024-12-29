@@ -231,10 +231,9 @@ router.post("/shorten", authUser, userRateLimiter, async (req, res) => {
  *         description: Internal Server Error
  */
 
-const url = `redis://${process.env.REDIS_HOST}:${process.env.REDIS_PORT}`;
 const redisClient = redis.createClient({
-  url,
-  password: process.env.REDIS_PASSWORD,
+  host: "127.0.0.1",
+  port: 6379,
 });
 redisClient.on("error", (err) => console.error("Redis Error:", err));
 
