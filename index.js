@@ -28,11 +28,7 @@ const swaggerOptions = {
       version: "1.0.0",
       description: "API documentation for the application",
     },
-    servers: [
-      {
-        url: `http://localhost:${process.env.PORT || 5000}`,
-      },
-    ],
+    servers: [],
     components: {
       securitySchemes: {
         BearerAuth: {
@@ -51,9 +47,20 @@ const swaggerOptions = {
   apis: ["./routes/*.js"],
 };
 
-const swaggerDocs = swaggerJsDoc(swaggerOptions);
-app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocs));
+app.use((req, res, next) => {
+  if (!swaggerOptions.definition.servers.length) {
+    const protocol = req.protocol;
+    const host = req.get("host");
+    swaggerOptions.definition.servers.push({
+      url: `${protocol}://${host}`,
+    });
+  }
+  next();
+});
 
+const swaggerDocs = swaggerJsDoc(swaggerOptions);
+
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 app.use("/api", routes);
 
 worker();

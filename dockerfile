@@ -1,13 +1,12 @@
 FROM node:20.10.0
 
-RUN apt-get update && apt-get install -y redis-server
+RUN apt-get update && apt-get install -y git redis-server
 
 WORKDIR /usr/src/app
 
-COPY package.json .
-RUN npm install
+RUN git clone https://github.com/shikhasoumya1612/url-shortner .
 
-COPY . .
+RUN npm install
 
 EXPOSE 6379
 EXPOSE ${PORT}
