@@ -1,7 +1,7 @@
 const { Worker } = require("bullmq");
 const URL = require("../models/url.model");
 
-const startWorker = () => {
+const worker = () => {
   const worker = new Worker(
     "urlUpdates",
     async (job) => {
@@ -55,4 +55,4 @@ const startWorker = () => {
   console.log("Worker for saving click data started");
 };
 
-module.exports = startWorker;
+module.exports = worker;

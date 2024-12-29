@@ -9,7 +9,7 @@ const moment = require("moment");
 const axios = require("axios");
 const { Queue } = require("bullmq");
 const redis = require("redis");
-require("dotenv").config({ path: __dirname + "../.env" });
+require("dotenv").config("../.env");
 
 const updateQueue = new Queue("urlUpdates", {
   connection: {
@@ -231,15 +231,11 @@ router.post("/shorten", authUser, userRateLimiter, async (req, res) => {
  *         description: Internal Server Error
  */
 
+const url = `redis://${process.env.REDIS_HOST}:${process.env.REDIS_PORT}`;
 const redisClient = redis.createClient({
-  username: "default",
-  password: "mDriqFiPjge7PFM87jnDNGUrMfllfZLG",
-  socket: {
-    host: "redis-17401.c11.us-east-1-2.ec2.redns.redis-cloud.com",
-    port: 17401,
-  },
+  url,
+  password: process.env.REDIS_PASSWORD,
 });
-
 redisClient.on("error", (err) => console.error("Redis Error:", err));
 
 (async () => {
