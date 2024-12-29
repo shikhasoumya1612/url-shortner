@@ -138,18 +138,21 @@
         const topic = document.getElementById("topic").value;
         const idToken = localStorage.getItem("id_token");
 
-        const response = await fetch("http://localhost:5000/api/shorten", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${idToken}`,
-          },
-          body: JSON.stringify({
-            longUrl,
-            customAlias,
-            topic,
-          }),
-        });
+        const response = await fetch(
+          "https://url-shortner-r4hn.onrender.com/api/shorten",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${idToken}`,
+            },
+            body: JSON.stringify({
+              longUrl,
+              customAlias,
+              topic,
+            }),
+          }
+        );
 
         const data = await response.json();
         if (response.ok) {
