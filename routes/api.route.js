@@ -6,14 +6,70 @@ const { generateShortAlias } = require("../utils/generateShortAlias");
 const URL = require("../models/url.model");
 const userRateLimiter = require("../middleware/userLimiter");
 const moment = require("moment");
-const useragent = require("useragent");
 const axios = require("axios");
+const { Queue } = require("bullmq");
+const redis = require("redis");
+require("dotenv").config({ path: __dirname + "../.env" });
+
+const updateQueue = new Queue("urlUpdates", {
+  connection: {
+    host: process.env.HOST_URL,
+    port: 6379,
+  },
+});
 
 const router = express.Router();
-const CLIENT_ID =
-  "243032421568-2pgqsg60ul4efo5iab2ggaluapga9qmf.apps.googleusercontent.com";
+const CLIENT_ID = process.env.GOOGLE_AUTH_CLIENT_API;
 
 const client = new OAuth2Client(CLIENT_ID);
+
+/**
+ * @swagger
+ * /api/auth/google:
+ *   post:
+ *     summary: Authenticate using Google OAuth2.0
+ *     description: Use Google ID token to authenticate a user and save to the database if not already existing.
+ *     operationId: authenticateGoogle
+ *     parameters:
+ *       - name: Authorization
+ *         in: header
+ *         required: true
+ *         description: The Google ID token passed as a Bearer token in the header.
+ *         schema:
+ *           type: string
+ *           example: "Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6Ijg2Njk2..."
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               data:
+ *                 type: string
+ *                 example: "Sample Data"
+ *     responses:
+ *       200:
+ *         description: Successfully authenticated user
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 user:
+ *                   type: object
+ *                   properties:
+ *                     name:
+ *                       type: string
+ *                       example: "John Doe"
+ *                     email:
+ *                       type: string
+ *                       example: "john.doe@example.com"
+ *       400:
+ *         description: ID token is required
+ *       500:
+ *         description: Internal Server Error
+ */
 
 router.post("/auth/google", async (req, res) => {
   const id_token = req.headers.authorization.replace("Bearer ", "");
@@ -45,6 +101,59 @@ router.post("/auth/google", async (req, res) => {
     res.status(500).json({ message: "Internal Server Error" });
   }
 });
+
+/**
+ * @swagger
+ * /api/shorten:
+ *   post:
+ *     summary: Shorten a URL
+ *     description: Shorten a given long URL with an optional custom alias.
+ *     operationId: shortenUrl
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               longUrl:
+ *                 type: string
+ *                 description: The long URL to be shortened
+ *                 example: "https://www.example.com"
+ *               customAlias:
+ *                 type: string
+ *                 description: Optional custom alias for the shortened URL
+ *                 example: "mycustomalias"
+ *               topic:
+ *                 type: string
+ *                 description: A topic/category related to the URL
+ *                 example: "Technology"
+ *     responses:
+ *       201:
+ *         description: URL successfully shortened
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 shortUrl:
+ *                   type: string
+ *                   example: "short.ly/abcd123"
+ *                 createdAt:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-12-28T10:30:00Z"
+ *       400:
+ *         description: Custom alias already exists
+ *       401:
+ *         description: User not authenticated
+ *       429:
+ *         description: Rate limit exceeded
+ *       500:
+ *         description: Internal Server Error
+ */
 
 router.post("/shorten", authUser, userRateLimiter, async (req, res) => {
   const { longUrl, customAlias, topic } = req.body;
@@ -90,18 +199,78 @@ router.post("/shorten", authUser, userRateLimiter, async (req, res) => {
   res.status(201).json({ shortUrl, createdAt: newURL.createdAt });
 });
 
+/**
+ * @swagger
+ * /api/shorten/{alias}:
+ *   get:
+ *     summary: Redirect to the original URL
+ *     description: Redirect the user to the original long URL from the shortened alias.
+ *     operationId: redirectToOriginalUrl
+ *     parameters:
+ *       - name: alias
+ *         in: path
+ *         required: true
+ *         description: The alias of the shortened URL
+ *         schema:
+ *           type: string
+ *           example: "abcd123"
+ *     responses:
+ *       302:
+ *         description: Successfully redirected to the original URL
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 redirectUrl:
+ *                   type: string
+ *                   example: "https://www.example.com"
+ *       404:
+ *         description: Alias not found
+ *       500:
+ *         description: Internal Server Error
+ */
+
+const redisClient = redis.createClient({
+  username: "default",
+  password: "mDriqFiPjge7PFM87jnDNGUrMfllfZLG",
+  socket: {
+    host: "redis-17401.c11.us-east-1-2.ec2.redns.redis-cloud.com",
+    port: 17401,
+  },
+});
+
+redisClient.on("error", (err) => console.error("Redis Error:", err));
+
+(async () => {
+  try {
+    await redisClient.connect();
+    console.log("Redis client connected");
+  } catch (err) {
+    console.error("Failed to connect Redis client:", err);
+  }
+})();
+
 router.get("/shorten/:alias", async (req, res) => {
   const alias = req.params.alias;
 
   try {
-    const urlRecord = await URL.findOne({ shortUrl: alias });
+    const cachedUrl = await redisClient.get(alias);
+    let urlRecord;
 
-    if (!urlRecord) {
-      return res.status(404).send("Short URL not found");
+    if (cachedUrl) {
+      urlRecord = JSON.parse(cachedUrl);
+    } else {
+      urlRecord = await URL.findOne({ shortUrl: alias });
+      if (!urlRecord) {
+        return res.status(404).send("Short URL not found");
+      }
+      await redisClient.setEx(alias, 3600, JSON.stringify(urlRecord));
     }
 
     const userIp = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
     const userAgent = req.headers["user-agent"];
+    let geolocation = "Unknown";
 
     try {
       const geoResponse = await axios.get(`https://ipinfo.io/${userIp}/geo`, {
@@ -112,11 +281,11 @@ router.get("/shorten/:alias", async (req, res) => {
       console.error("Error fetching geolocation:", geoError.message);
     }
 
-    urlRecord.clicks.push({
+    const clickData = {
       userIp,
       userAgent,
       timestamp: new Date(),
-      geolocation: geolocation.city || "Unknown",
+      geolocation,
       osType: req.useragent?.os || "Unknown OS",
       deviceType: req.useragent?.isMobile
         ? "Mobile"
@@ -125,16 +294,52 @@ router.get("/shorten/:alias", async (req, res) => {
         : req.useragent?.isDesktop
         ? "Desktop"
         : "Unknown Device",
-    });
+      shortUrl: alias,
+    };
 
-    await urlRecord.save();
+    console.log("Click Data Info - ", clickData);
 
-    res.redirect(301, urlRecord.longUrl);
+    await updateQueue.add("updateClick", clickData);
+
+    res.redirect(302, urlRecord.longUrl);
   } catch (error) {
-    console.error(error);
+    console.error("Error in route handler:", error);
     res.status(500).send("Internal Server Error");
   }
 });
+
+/**
+ * @swagger
+ * /api/analytics/overall:
+ *   get:
+ *     summary: Get overall analytics
+ *     description: Fetch overall analytics for all URLs created by the authenticated user.
+ *     tags: [Analytics]
+ *     responses:
+ *       200:
+ *         description: Analytics retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 totalUrls:
+ *                   type: integer
+ *                   description: Total number of URLs created by the user
+ *                 totalClicks:
+ *                   type: integer
+ *                   description: Total number of clicks across all URLs
+ *                 uniqueUsers:
+ *                   type: integer
+ *                   description: Number of unique users who clicked the URLs
+ *                 clicksByDate:
+ *                   type: object
+ *                   additionalProperties:
+ *                     type: integer
+ *                   description: Click counts grouped by date
+ *       500:
+ *         description: Internal server error
+ */
 
 router.get("/analytics/overall", authUser, async (req, res) => {
   try {
@@ -146,7 +351,7 @@ router.get("/analytics/overall", authUser, async (req, res) => {
         $group: {
           _id: null,
           totalClicks: { $sum: 1 },
-          uniqueUsers: { $addToSet: "$clicks.userIp" }, // Collect unique user IPs
+          uniqueUsers: { $addToSet: "$clicks.userIp" },
           clicksByDate: {
             $push: {
               date: {
@@ -259,8 +464,46 @@ router.get("/analytics/overall", authUser, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/topic/{topic}:
+ *   get:
+ *     summary: Get all shortened URLs by a specific topic
+ *     description: Retrieve a list of shortened URLs associated with a specific topic.
+ *     operationId: getUrlsByTopic
+ *     parameters:
+ *       - name: topic
+ *         in: path
+ *         required: true
+ *         description: The topic associated with the shortened URLs
+ *         schema:
+ *           type: string
+ *           example: "Technology"
+ *     responses:
+ *       200:
+ *         description: Successfully retrieved URLs by topic
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   shortUrl:
+ *                     type: string
+ *                     example: "short.ly/abcd123"
+ *                   longUrl:
+ *                     type: string
+ *                     example: "https://www.example.com"
+ *       404:
+ *         description: No URLs found for the specified topic
+ *       500:
+ *         description: Internal Server Error
+ */
+
 router.get("/analytics/topic/:topic", async (req, res) => {
-  const { topic } = req.params;
+  let { topic } = req.params;
+  topic = topic.toLowerCase();
 
   try {
     const analytics = await URL.aggregate([
@@ -270,7 +513,7 @@ router.get("/analytics/topic/:topic", async (req, res) => {
         $group: {
           _id: null,
           totalClicks: { $sum: 1 },
-          uniqueUsers: { $addToSet: "$clicks.userIp" }, // Collect unique user IPs
+          uniqueUsers: { $addToSet: "$clicks.userIp" },
           clicksByDate: {
             $push: {
               date: {
@@ -382,6 +625,41 @@ router.get("/analytics/topic/:topic", async (req, res) => {
       .json({ message: "An error occurred while retrieving analytics" });
   }
 });
+
+/**
+ * @swagger
+ * /api/analytics/{alias}:
+ *   get:
+ *     summary: Get analytics for a specific shortened URL
+ *     description: Fetch analytics like the number of times a specific alias has been redirected.
+ *     operationId: getAliasAnalytics
+ *     parameters:
+ *       - name: alias
+ *         in: path
+ *         required: true
+ *         description: The alias of the shortened URL
+ *         schema:
+ *           type: string
+ *           example: "abcd123"
+ *     responses:
+ *       200:
+ *         description: Successfully retrieved analytics for the alias
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 alias:
+ *                   type: string
+ *                   example: "abcd123"
+ *                 redirectCount:
+ *                   type: integer
+ *                   example: 50
+ *       404:
+ *         description: Alias not found
+ *       500:
+ *         description: Internal Server Error
+ */
 
 router.get("/analytics/:alias", async (req, res) => {
   const alias = req.params.alias;
