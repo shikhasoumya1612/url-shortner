@@ -104,7 +104,7 @@
 
         localStorage.setItem("id_token", idToken);
 
-        fetch("https://url-shortner-r4hn.onrender.com/api/auth/google", {
+        fetch("/api/auth/google", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

@@ -157,7 +157,7 @@
         const data = await response.json();
         if (response.ok) {
           shortUrlResponse.style.display = "block";
-          shortUrl.textContent = `https://url-shortner-r4hn.onrender.com/api/shorten/${data.shortUrl}`;
+          shortUrl.textContent = `/api/shorten/${data.shortUrl}`;
         } else {
           alert("Error generating short URL");
         }
